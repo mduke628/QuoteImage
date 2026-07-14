@@ -1,20 +1,12 @@
 # QuoteImage
 
-Turns a portrait photo + a quote into a black-and-white "typographic
-portrait": the quote's own words are wrapped into ordinary paragraph text,
-then each letter is shaded by how light or dark the photo is underneath it.
-Shadows and dark features (hair, eyebrows, pupils, jawline) come out as dark
-text; highlights fade toward the white page. Because every glyph is drawn
-at normal size with no warping, the quote stays fully readable while the
-overall pattern of ink reconstructs the face.
-
-![example](examples/output_grayscale.png)
+Turns a portrait photo + a quote into a black-and-white typographic portrait.
 
 ## Browser app
 
-`web/index.html` is a self-contained, no-install web app version — everything
-(image processing, text layout, rendering) runs client-side in JavaScript on
-a `<canvas>`, so your photo never leaves the browser. Just open the file in
+`web/index.html` is a self-contained, no-install web app — everything (image
+processing, text layout, rendering) runs client-side in JavaScript on a
+`<canvas>`, so your photo never leaves the browser. Just open the file in
 Chrome:
 
 ```bash
@@ -23,12 +15,43 @@ xdg-open web/index.html      # Linux
 # or just double-click the file / drag it into a Chrome tab
 ```
 
-Upload a photo, paste a quote, and it renders live. Includes the same
-grayscale/pure-black-and-white modes and tuning controls (detail, contrast,
-ink weight, edge emphasis, invert) as the CLI below, plus a "Download PNG"
-button.
+Upload a photo, paste a quote, and it renders live.
+
+The quote is set **once, in full** — never repeated — using an embedded
+serif typeface (Lora). The photo is reduced to a handful of tonal bands via
+Otsu thresholding; each band maps to a weight and style (light italic for
+soft shading, bold for the darkest hair/shadow/contour regions), so the
+words' own boldness and size stand in for the photo's light and dark. A
+solver picks the largest comfortable type size at which the *entire* quote
+still fits somewhere on the portrait's shape — shrinking only as far as
+genuinely necessary — and short quotes are spread across the portrait's
+most defining regions (rather than repeating or clumping) so they still
+reach across the whole image. A quote is never truncated: if a photo's
+shape genuinely can't hold it at a legible size, the remainder wraps as a
+plain line rather than being cut off.
+
+Controls: output width, contrast, tonal curve, edge emphasis, shading
+balance (nudges the tone/background cutoff), and light-text-on-dark-ground
+invert — plus a "Download PNG" button.
+
+A longer quote gives the solver more to work with and traces the shape more
+fully:
+
+![web app example, long quote](examples/web_example_long.png)
+
+A short quote still spreads across the portrait's most defining regions,
+just more sparsely:
+
+![web app example, short quote](examples/web_example.png)
 
 ## Command line
+
+A separate, simpler command-line tool (`quoteimage/portrait.py`) is also
+included — it tiles the quote repeatedly across the image, shaded by
+brightness, rather than the browser app's single-pass/weighted-type
+approach above.
+
+![CLI example](examples/cli_example.png)
 
 ## Setup
 
@@ -101,5 +124,5 @@ sanity-check the pipeline:
 python3 examples/make_sample_portrait.py
 python3 -m quoteimage.portrait examples/sample_portrait.png \
   "The only way to do great work is to love what you do." \
-  -o examples/output_grayscale.png
+  -o examples/cli_example.png
 ```
