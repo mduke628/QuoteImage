@@ -1,0 +1,730 @@
+<title>Quote Portrait — Darkroom</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg: #17161a;
+    --bg-2: #1d1b20;
+    --rail: #211f25;
+    --surface: #29272e;
+    --surface-2: #322f37;
+    --border: #423e47;
+    --text: #ece7dc;
+    --text-dim: #a8a196;
+    --text-faint: #756e66;
+    --accent: #c9482c;
+    --accent-hover: #dd5b3c;
+    --accent-text: #fbe9df;
+    --paper: #f8f5ec;
+    --paper-shadow: rgba(0,0,0,0.55);
+    --focus: #e0a26b;
+    --radius: 3px;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{ height: 100%; }
+  body{
+    margin: 0;
+    background:
+      radial-gradient(ellipse at 20% -10%, #24222a 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  a, button, input, textarea, select{ font: inherit; color: inherit; }
+  button{ cursor: pointer; }
+  :focus-visible{ outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .app{
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+  }
+
+  header.masthead{
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  header.masthead .title{
+    font-family: var(--serif);
+    font-size: 26px;
+    letter-spacing: 0.01em;
+    color: var(--text);
+    text-wrap: balance;
+  }
+  header.masthead .title em{
+    font-style: italic;
+    color: var(--accent-hover);
+  }
+  header.masthead .tagline{
+    font-size: 13px;
+    color: var(--text-dim);
+    max-width: 46ch;
+  }
+
+  .workbench{
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 22px;
+    align-items: start;
+  }
+  @media (max-width: 860px){
+    .workbench{ grid-template-columns: 1fr; }
+  }
+
+  /* ---- control rail ---- */
+  .rail{
+    background: var(--rail);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: sticky;
+    top: 20px;
+  }
+  @media (max-width: 860px){ .rail{ position: static; } }
+
+  .field{ display: flex; flex-direction: column; gap: 8px; }
+  .field > label.field-label{
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
+  }
+
+  .dropzone{
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    background: var(--bg-2);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--accent-hover);
+    background: var(--surface);
+  }
+  .dropzone .thumb{
+    width: 44px; height: 44px;
+    border-radius: 2px;
+    object-fit: cover;
+    display: none;
+    background: var(--surface-2);
+    flex: none;
+  }
+  .dropzone .dz-text{ font-size: 12.5px; color: var(--text-dim); }
+  .dropzone .dz-text strong{ color: var(--text); font-weight: 600; }
+  .dropzone input[type="file"]{ display: none; }
+
+  textarea{
+    width: 100%;
+    resize: vertical;
+    min-height: 84px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 10px 11px;
+    font-family: var(--serif);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  textarea:focus-visible{ border-color: var(--accent-hover); }
+
+  .slider-row{ display: flex; align-items: center; gap: 10px; }
+  .slider-row input[type="range"]{
+    flex: 1;
+    accent-color: var(--accent);
+  }
+  .slider-row .val{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    min-width: 3.4em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .segmented{
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .segmented input{ position: absolute; opacity: 0; pointer-events: none; }
+  .segmented label{
+    flex: 1;
+    text-align: center;
+    padding: 7px 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--bg-2);
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .segmented label:last-child{ border-right: none; }
+  .segmented input:checked + label{
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .checkline{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .checkline input{ accent-color: var(--accent); }
+
+  details.advanced{ border-top: 1px solid var(--border); padding-top: 14px; }
+  details.advanced > summary{
+    list-style: none;
+    cursor: pointer;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  details.advanced > summary::before{
+    content: "▸";
+    display: inline-block;
+    transition: transform 120ms ease;
+    font-size: 10px;
+  }
+  details.advanced[open] > summary::before{ transform: rotate(90deg); }
+  details.advanced .adv-body{
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 16px;
+  }
+
+  .btn{
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-text);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .btn:hover{ background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn:disabled{
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+  .btn.secondary{
+    background: transparent;
+    color: var(--text-dim);
+    border-color: var(--border);
+  }
+  .btn.secondary:hover{ border-color: var(--text-dim); color: var(--text); }
+
+  /* ---- stage ---- */
+  .stage{ display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .mat{
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(16px, 4vw, 44px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 420px;
+    position: relative;
+  }
+  .mat canvas{
+    max-width: 100%;
+    height: auto;
+    display: block;
+    background: var(--paper);
+    box-shadow: 0 18px 50px var(--paper-shadow);
+  }
+  .placeholder{
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13px;
+    max-width: 32ch;
+    padding: 40px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+  .placeholder strong{ display: block; color: var(--text-dim); font-size: 14px; margin-bottom: 6px; }
+
+  .stage-actions{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .stage-actions .meta{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .status{
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .status.err{ color: var(--accent-hover); }
+  .actions-left{ display:flex; gap:10px; align-items:center; }
+</style>
+
+<div class="app">
+  <header class="masthead">
+    <div>
+      <div class="title">Quote Portrait <em>Darkroom</em></div>
+      <div class="tagline">Upload a photo and a quote. The words themselves become the ink — dark where the face is dark, faint where it's light — legible up close, a portrait from across the room.</div>
+    </div>
+  </header>
+
+  <main class="workbench">
+    <aside class="rail">
+      <div class="field">
+        <label class="field-label" for="fileInput">Portrait</label>
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload a portrait photo">
+          <img class="thumb" id="thumb" alt="" />
+          <div class="dz-text" id="dzText"><strong>Choose a photo</strong><br />or drag it here</div>
+          <input type="file" id="fileInput" accept="image/*" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="quoteInput">Quote</label>
+        <textarea id="quoteInput" spellcheck="false"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="cellSize">Detail</label>
+        <div class="slider-row">
+          <input type="range" id="cellSize" min="8" max="26" step="1" value="14" />
+          <span class="val" id="cellSizeVal">14 px</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Rendering</label>
+        <div class="segmented" id="modeGroup">
+          <input type="radio" name="mode" id="modeGray" value="grayscale" checked />
+          <label for="modeGray">Grayscale</label>
+          <input type="radio" name="mode" id="modeDither" value="dither" />
+          <label for="modeDither">Pure B/W</label>
+        </div>
+      </div>
+
+      <label class="checkline">
+        <input type="checkbox" id="invertInput" />
+        Light text on dark ground
+      </label>
+
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="adv-body">
+          <div class="field">
+            <label class="field-label" for="widthInput">Output width</label>
+            <div class="slider-row">
+              <input type="range" id="widthInput" min="600" max="1800" step="50" value="1200" />
+              <span class="val" id="widthVal">1200px</span>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="contrastInput">Contrast</label>
+            <div class="slider-row">
+              <input type="range" id="contrastInput" min="0.6" max="2.2" step="0.05" value="1.35" />
+              <span class="val" id="contrastVal">1.35</span>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="gammaInput">Ink weight</label>
+            <div class="slider-row">
+              <input type="range" id="gammaInput" min="0.4" max="1.6" step="0.05" value="0.85" />
+              <span class="val" id="gammaVal">0.85</span>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="edgeBoostInput">Edge emphasis</label>
+            <div class="slider-row">
+              <input type="range" id="edgeBoostInput" min="0" max="200" step="5" value="90" />
+              <span class="val" id="edgeBoostVal">90</span>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="whiteThresholdInput">Highlight cutoff</label>
+            <div class="slider-row">
+              <input type="range" id="whiteThresholdInput" min="200" max="255" step="1" value="248" />
+              <span class="val" id="whiteThresholdVal">248</span>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="actions-left">
+        <button class="btn" id="generateBtn">Develop</button>
+        <button class="btn secondary" id="downloadBtn" disabled>Download PNG</button>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <div class="mat">
+        <canvas id="preview" style="display:none;"></canvas>
+        <div class="placeholder" id="placeholder">
+          <strong>No print yet</strong>
+          Choose a portrait on the left to see the quote take its shape.
+        </div>
+      </div>
+      <div class="stage-actions">
+        <span class="status" id="status"></span>
+        <span class="meta" id="meta"></span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const MONO = 'ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
+  const DEFAULT_QUOTE = "The only way to do great work is to love what you do. If you haven't found it yet, keep looking. Don't settle.";
+
+  const els = {
+    fileInput: document.getElementById('fileInput'),
+    dropzone: document.getElementById('dropzone'),
+    thumb: document.getElementById('thumb'),
+    dzText: document.getElementById('dzText'),
+    quoteInput: document.getElementById('quoteInput'),
+    cellSize: document.getElementById('cellSize'),
+    cellSizeVal: document.getElementById('cellSizeVal'),
+    widthInput: document.getElementById('widthInput'),
+    widthVal: document.getElementById('widthVal'),
+    contrastInput: document.getElementById('contrastInput'),
+    contrastVal: document.getElementById('contrastVal'),
+    gammaInput: document.getElementById('gammaInput'),
+    gammaVal: document.getElementById('gammaVal'),
+    edgeBoostInput: document.getElementById('edgeBoostInput'),
+    edgeBoostVal: document.getElementById('edgeBoostVal'),
+    whiteThresholdInput: document.getElementById('whiteThresholdInput'),
+    whiteThresholdVal: document.getElementById('whiteThresholdVal'),
+    invertInput: document.getElementById('invertInput'),
+    modeGray: document.getElementById('modeGray'),
+    modeDither: document.getElementById('modeDither'),
+    generateBtn: document.getElementById('generateBtn'),
+    downloadBtn: document.getElementById('downloadBtn'),
+    canvas: document.getElementById('preview'),
+    placeholder: document.getElementById('placeholder'),
+    status: document.getElementById('status'),
+    meta: document.getElementById('meta'),
+  };
+
+  els.quoteInput.value = DEFAULT_QUOTE;
+
+  let sourceImage = null;
+  let darknessMap = null;
+  let mapW = 0, mapH = 0;
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function setStatus(text, isErr){
+    els.status.textContent = text;
+    els.status.classList.toggle('err', !!isErr);
+  }
+
+  function syncLabels(){
+    els.cellSizeVal.textContent = els.cellSize.value + ' px';
+    els.widthVal.textContent = els.widthInput.value + 'px';
+    els.contrastVal.textContent = parseFloat(els.contrastInput.value).toFixed(2);
+    els.gammaVal.textContent = parseFloat(els.gammaInput.value).toFixed(2);
+    els.edgeBoostVal.textContent = els.edgeBoostInput.value;
+    els.whiteThresholdVal.textContent = els.whiteThresholdInput.value;
+  }
+  syncLabels();
+
+  function currentMode(){ return els.modeDither.checked ? 'dither' : 'grayscale'; }
+
+  // ---------- image -> darkness map ----------
+  function computeDarknessMap(){
+    const width = clamp(parseInt(els.widthInput.value, 10), 400, 2200);
+    const aspect = sourceImage.height / sourceImage.width;
+    const height = Math.max(1, Math.round(width * aspect));
+
+    const work = document.createElement('canvas');
+    work.width = width; work.height = height;
+    const wctx = work.getContext('2d', { willReadFrequently: true });
+    wctx.drawImage(sourceImage, 0, 0, width, height);
+    const imgData = wctx.getImageData(0, 0, width, height);
+    const d = imgData.data;
+    const n = width * height;
+    const gray = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4){
+      gray[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+
+    // autocontrast: stretch the 1st-99th percentile to full range
+    const sorted = Float32Array.from(gray).sort();
+    const lo = sorted[Math.floor(n * 0.01)];
+    const hi = sorted[Math.min(n - 1, Math.ceil(n * 0.99))];
+    const range = Math.max(1, hi - lo);
+    for (let i = 0; i < n; i++){
+      gray[i] = clamp((gray[i] - lo) / range * 255, 0, 255);
+    }
+
+    const contrast = parseFloat(els.contrastInput.value);
+    if (contrast !== 1){
+      for (let i = 0; i < n; i++){
+        gray[i] = clamp((gray[i] - 127.5) * contrast + 127.5, 0, 255);
+      }
+    }
+
+    // Sobel edge magnitude, for crisper contours (eyes, nose, jaw)
+    const edgeBoost = parseFloat(els.edgeBoostInput.value);
+    const edge = new Float32Array(n);
+    let maxEdge = 0;
+    if (edgeBoost > 0){
+      for (let y = 1; y < height - 1; y++){
+        const row = y * width, up = row - width, down = row + width;
+        for (let x = 1; x < width - 1; x++){
+          const gx = -gray[up + x - 1] - 2 * gray[row + x - 1] - gray[down + x - 1]
+                     + gray[up + x + 1] + 2 * gray[row + x + 1] + gray[down + x + 1];
+          const gy = -gray[up + x - 1] - 2 * gray[up + x] - gray[up + x + 1]
+                     + gray[down + x - 1] + 2 * gray[down + x] + gray[down + x + 1];
+          const mag = Math.sqrt(gx * gx + gy * gy);
+          edge[row + x] = mag;
+          if (mag > maxEdge) maxEdge = mag;
+        }
+      }
+    }
+
+    const gamma = parseFloat(els.gammaInput.value);
+    const invert = els.invertInput.checked;
+    const darkness = new Float32Array(n);
+    for (let i = 0; i < n; i++){
+      let dk = 255 - gray[i];
+      if (edgeBoost > 0 && maxEdge > 0){
+        const e = edge[i] / maxEdge * 255;
+        dk = Math.max(dk, e * (edgeBoost / 255));
+      }
+      dk = clamp(dk, 0, 255);
+      dk = 255 * Math.pow(dk / 255, gamma);
+      if (invert) dk = 255 - dk;
+      darkness[i] = clamp(dk, 0, 255);
+    }
+
+    darknessMap = darkness; mapW = width; mapH = height;
+  }
+
+  function averageDarkness(x0, x1, y0, y1){
+    const stepX = Math.max(1, Math.floor((x1 - x0) / 6));
+    const stepY = Math.max(1, Math.floor((y1 - y0) / 6));
+    let sum = 0, count = 0;
+    for (let y = y0; y < y1; y += stepY){
+      const row = y * mapW;
+      for (let x = x0; x < x1; x += stepX){
+        sum += darknessMap[row + x];
+        count++;
+      }
+    }
+    return count ? sum / count : 0;
+  }
+
+  // ---------- text layout ----------
+  function buildLines(ctx, width, rows, quote, spaceWidth){
+    const words = quote.split(/\s+/).filter(Boolean);
+    if (!words.length) words.push('…');
+
+    function* stream(){
+      while (true){
+        for (const w of words) yield w;
+        yield '✦'; // marks each pass back to the start of the quote
+      }
+    }
+    const it = stream();
+
+    const lines = [];
+    let current = [], currentWidth = 0;
+    for (const word of it){
+      const wWidth = ctx.measureText(word).width;
+      const addition = current.length ? spaceWidth + wWidth : wWidth;
+      if (current.length && currentWidth + addition > width){
+        lines.push(current);
+        if (lines.length >= rows) return lines;
+        current = [word]; currentWidth = wWidth;
+      } else {
+        current.push(word); currentWidth += addition;
+      }
+    }
+    lines.push(current);
+    return lines.slice(0, rows);
+  }
+
+  function renderPortrait(){
+    const canvas = els.canvas;
+    canvas.width = mapW; canvas.height = mapH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f8f5ec';
+    ctx.fillRect(0, 0, mapW, mapH);
+
+    const cellSize = parseInt(els.cellSize.value, 10);
+    const lineHeight = Math.round(cellSize * 1.08);
+    ctx.font = `${cellSize}px ${MONO}`;
+    ctx.textBaseline = 'top';
+    const spaceWidth = ctx.measureText(' ').width || cellSize * 0.6;
+
+    const quote = els.quoteInput.value.trim() || DEFAULT_QUOTE;
+    const rows = Math.floor(mapH / lineHeight) + 1;
+    const lines = buildLines(ctx, mapW, rows, quote, spaceWidth);
+
+    const mode = currentMode();
+    const whiteThreshold = parseFloat(els.whiteThresholdInput.value);
+    const inkColor = '#1c1a16';
+
+    lines.forEach((words, row) => {
+      const y = row * lineHeight;
+      const y0 = y, y1 = Math.min(y + lineHeight, mapH);
+      if (y0 >= mapH) return;
+      let x = 0;
+      let error = 0;
+      words.forEach((word, wIdx) => {
+        if (wIdx > 0) x += spaceWidth;
+        for (const ch of word){
+          const chWidth = ctx.measureText(ch).width;
+          const x0 = Math.max(0, Math.floor(x));
+          const x1 = Math.min(mapW, Math.ceil(x + chWidth));
+          const local = (x1 > x0 && y1 > y0) ? averageDarkness(x0, x1, y0, y1) : 0;
+
+          if (mode === 'dither'){
+            const target = local / 255 + error;
+            if (target > 0.5){
+              ctx.fillStyle = inkColor;
+              ctx.fillText(ch, x, y);
+              error = target - 1;
+            } else {
+              error = target;
+            }
+          } else {
+            if (local > (255 - whiteThreshold)){
+              const g = Math.round(clamp(255 - local, 0, 255));
+              ctx.fillStyle = `rgb(${g},${g},${g})`;
+              ctx.fillText(ch, x, y);
+            }
+          }
+          x += chWidth;
+        }
+      });
+    });
+
+    els.meta.textContent = `${mapW} × ${mapH}px · ${lines.length} lines · ${cellSize}px type`;
+  }
+
+  let busy = false;
+  function generate(){
+    if (!sourceImage || busy) return;
+    busy = true;
+    setStatus('Developing…');
+    els.downloadBtn.disabled = true;
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try{
+          computeDarknessMap();
+          renderPortrait();
+          setStatus('Ready');
+          els.downloadBtn.disabled = false;
+        } catch (err){
+          console.error(err);
+          setStatus('Something went wrong: ' + err.message, true);
+        } finally {
+          busy = false;
+        }
+      }, 10);
+    });
+  }
+
+  let debounceTimer = null;
+  function scheduleGenerate(){
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(generate, 260);
+  }
+
+  // ---------- file handling ----------
+  function handleFile(file){
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        sourceImage = img;
+        els.thumb.src = e.target.result;
+        els.thumb.style.display = 'block';
+        els.dzText.innerHTML = '<strong>' + (file.name.length > 28 ? file.name.slice(0, 25) + '…' : file.name) + '</strong><br />click to replace';
+        els.placeholder.style.display = 'none';
+        els.canvas.style.display = 'block';
+        generate();
+      };
+      img.onerror = () => setStatus('Could not read that image.', true);
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  els.fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+  els.dropzone.addEventListener('click', () => els.fileInput.click());
+  els.dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); els.fileInput.click(); }
+  });
+  ['dragenter', 'dragover'].forEach(evt =>
+    els.dropzone.addEventListener(evt, (e) => { e.preventDefault(); els.dropzone.classList.add('drag'); })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    els.dropzone.addEventListener(evt, (e) => { e.preventDefault(); els.dropzone.classList.remove('drag'); })
+  );
+  els.dropzone.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
+
+  // ---------- controls ----------
+  [els.cellSize, els.widthInput, els.contrastInput, els.gammaInput, els.edgeBoostInput, els.whiteThresholdInput]
+    .forEach(el => el.addEventListener('input', () => { syncLabels(); scheduleGenerate(); }));
+  els.quoteInput.addEventListener('input', scheduleGenerate);
+  els.invertInput.addEventListener('change', generate);
+  els.modeGray.addEventListener('change', generate);
+  els.modeDither.addEventListener('change', generate);
+  els.generateBtn.addEventListener('click', generate);
+
+  els.downloadBtn.addEventListener('click', () => {
+    if (!els.downloadBtn.disabled){
+      const link = document.createElement('a');
+      link.download = 'quote-portrait.png';
+      link.href = els.canvas.toDataURL('image/png');
+      link.click();
+    }
+  });
+})();
+</script>

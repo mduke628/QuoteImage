@@ -10,6 +10,26 @@ overall pattern of ink reconstructs the face.
 
 ![example](examples/output_grayscale.png)
 
+## Browser app
+
+`web/index.html` is a self-contained, no-install web app version — everything
+(image processing, text layout, rendering) runs client-side in JavaScript on
+a `<canvas>`, so your photo never leaves the browser. Just open the file in
+Chrome:
+
+```bash
+open web/index.html          # macOS
+xdg-open web/index.html      # Linux
+# or just double-click the file / drag it into a Chrome tab
+```
+
+Upload a photo, paste a quote, and it renders live. Includes the same
+grayscale/pure-black-and-white modes and tuning controls (detail, contrast,
+ink weight, edge emphasis, invert) as the CLI below, plus a "Download PNG"
+button.
+
+## Command line
+
 ## Setup
 
 ```bash
