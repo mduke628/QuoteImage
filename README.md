@@ -17,18 +17,27 @@ xdg-open web/index.html      # Linux
 
 Upload a photo, paste a quote, and it renders live.
 
-The quote is set **once, in full** — never repeated — using an embedded
-serif typeface (Lora). The photo is reduced to a handful of tonal bands via
-Otsu thresholding; each band maps to a weight and style (light italic for
-soft shading, bold for the darkest hair/shadow/contour regions), so the
-words' own boldness and size stand in for the photo's light and dark. A
-solver picks the largest comfortable type size at which the *entire* quote
-still fits somewhere on the portrait's shape — shrinking only as far as
-genuinely necessary — and short quotes are spread across the portrait's
-most defining regions (rather than repeating or clumping) so they still
-reach across the whole image. A quote is never truncated: if a photo's
-shape genuinely can't hold it at a legible size, the remainder wraps as a
-plain line rather than being cut off.
+The quote is set **once, in full** — never repeated. The photo is reduced to
+four tonal bands via Otsu thresholding, and each band gets its own
+typographic voice, not just a bigger or bolder version of the same one:
+
+| Band | Typeface | Feel |
+|---|---|---|
+| Faintest highlights | NothingYouCouldDo (script) | a whispered, handwritten touch |
+| Soft shading | Instrument Serif Italic | small, delicate |
+| Mid-tones | Lora | the readable backbone |
+| Deepest shadow (hair, brows, eyes, jaw) | Big Shoulders (bold display) | large, dramatic |
+
+Within a band, every individual word also gets its own small, deterministic
+jitter in size and baseline (and a slight tilt for the script band) — so it
+reads as hand-set and collaged rather than a mechanically uniform grid,
+while staying legible. A solver picks the largest comfortable base size at
+which the *entire* quote still fits somewhere on the portrait's shape —
+shrinking only as far as genuinely necessary — and short quotes are spread
+across the portrait's most defining regions (rather than repeating or
+clumping) so they still reach across the whole image. A quote is never
+truncated: if a photo's shape genuinely can't hold it at a legible size, the
+remainder wraps as a plain line rather than being cut off.
 
 Controls: output width, contrast, tonal curve, edge emphasis, shading
 balance (nudges the tone/background cutoff), and light-text-on-dark-ground
