@@ -33,11 +33,21 @@ jitter in size and baseline (and a slight tilt for the script band) — so it
 reads as hand-set and collaged rather than a mechanically uniform grid,
 while staying legible. A solver picks the largest comfortable base size at
 which the *entire* quote still fits somewhere on the portrait's shape —
-shrinking only as far as genuinely necessary — and short quotes are spread
-across the portrait's most defining regions (rather than repeating or
-clumping) so they still reach across the whole image. A quote is never
-truncated: if a photo's shape genuinely can't hold it at a legible size, the
-remainder wraps as a plain line rather than being cut off.
+shrinking only as far as genuinely necessary.
+
+A real photo can carry far more fine detail (individual hair strands,
+wrinkles) than a short quote has words to trace. Rather than either scatter
+a handful of words across hundreds of rows (reads as noise) or blow the type
+up to poster size to compensate, the app blurs the tonal map by an amount
+tied to the word count before thresholding it — merging fine detail into a
+smaller number of coherent regions (a hair mass, glasses, a jaw shadow, a
+collar) roughly sized to what the quote can actually cover, then samples
+those regions with whole-band voting rather than a single fragile point
+sample. A quote is never truncated: if a photo's shape genuinely can't hold
+it at a legible size, the remainder wraps as a plain line rather than being
+cut off. Very short quotes (a handful of words) inherently can't convey a
+detailed likeness — there just isn't enough text — and the status line says
+so rather than pretending otherwise.
 
 Controls: output width, contrast, tonal curve, edge emphasis, shading
 balance (nudges the tone/background cutoff), and light-text-on-dark-ground
