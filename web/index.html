@@ -383,27 +383,16 @@
   "use strict";
 
   const DEFAULT_QUOTE = "The only way to do great work is to love what you do. If you haven't found it yet, keep looking. Don't settle.";
-  const LINE_SPACING = 1.45;
 
-  // Four tonal bands, four distinct typographic voices — from a whispered script in the
-  // faintest highlights up to a heavy display face in the deepest shadow — so the words'
-  // own character stands in for the photo's light and dark, not just a uniform gray ramp.
-  // index 0 is the unused/background band. Kept modest rather than extreme: consecutive
-  // rows can both land in the boldest band on a photo with a large dark mass (hair, a
-  // dark background), and an overly tall glyph there will bleed into neighboring rows
-  // badly enough to read as a jumble rather than a deliberate overlap.
+  // Four tonal bands, four distinct typographic voices — from a whispered script tracing
+  // the faintest highlight contours up to a heavy display face tracing the deepest
+  // shadow's edge — so the words' own character stands in for the photo's light and dark,
+  // not just a uniform gray ramp. Index 0 is the unused/background band.
   const TIER_PREFIX = [null, "", "italic ", "", ""];
   const TIER_FAMILY = [null, "'NothingYouCouldDo', cursive", "'InstrumentSerif', serif", "'Lora', serif", "'BigShoulders', sans-serif"];
   const TIER_SCALE = [null, 0.68, 0.85, 1.0, 1.35];
   const TIER_MIN   = [null, 14, 11, 8, 12];
-  const MAX_FONT_CAP = 90;
-
-  function hashStr(s){
-    let h = 2166136261;
-    for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-  }
-  function jitter01(seed){ return hashStr(seed) % 10000 / 10000; }
+  const MAX_FONT_CAP = 220;
 
   const els = {
     fileInput: document.getElementById('fileInput'),
@@ -531,15 +520,9 @@
     darkness = dk; mapW = width; mapH = height;
   }
 
-  // ---------- tone -> tier grid (Otsu split into three content bands) ----------
-  let tierGrid = null, otsuThreshold = 127;
-
   // Separable box blur (two passes approximates a Gaussian), O(n) via a sliding window
-  // regardless of radius. A real photo can carry far more fine detail — individual hair
-  // strands, wrinkles — than a short quote has words to trace. Rather than blow the type
-  // up to poster size to compensate, blurring the tonal map first merges that detail into
-  // a smaller number of coherent blobs (hair mass, glasses, jaw shadow, collar) sized to
-  // roughly match how much text is available, so the type can stay a legible size.
+  // regardless of radius. Used as a light denoise before contours are traced, so lines
+  // read as deliberate strokes rather than a jittery mess of skin-texture/JPEG noise.
   function boxBlur1D(src, w, h, radius, horizontal){
     const out = new Float32Array(w * h);
     const r = Math.round(radius);
@@ -575,11 +558,10 @@
     return f;
   }
 
-  function buildTierGrid(blurRadius){
-    const source = blurField(darkness, mapW, mapH, blurRadius || 0);
-    const n = mapW * mapH;
+  function computeOtsuThreshold(field, w, h){
+    const n = w * h;
     const hist = new Array(256).fill(0);
-    for (let i = 0; i < n; i++) hist[Math.round(clamp(source[i], 0, 255))]++;
+    for (let i = 0; i < n; i++) hist[Math.round(clamp(field[i], 0, 255))]++;
     let sumAll = 0;
     for (let t = 0; t < 256; t++) sumAll += t * hist[t];
     let wB = 0, sumB = 0, maxVar = -1, threshold = 127;
@@ -593,282 +575,322 @@
       const between = wB * wF * (mB - mF) * (mB - mF);
       if (between > maxVar){ maxVar = between; threshold = t; }
     }
-    const bias = parseFloat(els.thresholdBiasInput.value);
-    threshold = clamp(threshold + bias, 0, 248);
-    const span = (255 - threshold) / 4;
-    const t1 = threshold + span, t2 = threshold + span * 2, t3 = threshold + span * 3;
-
-    const grid = new Uint8Array(n);
-    for (let i = 0; i < n; i++){
-      const v = source[i];
-      grid[i] = v < threshold ? 0 : v < t1 ? 1 : v < t2 ? 2 : v < t3 ? 3 : 4;
-    }
-    tierGrid = grid; otsuThreshold = threshold;
+    return threshold;
   }
 
-  // ---------- row segmentation at a given line height ----------
-  function getRowSegments(sampleY, gapTol, minWidth){
-    const rowOffset = sampleY * mapW;
-    const runs = [];
-    let x = 0;
-    while (x < mapW){
-      if (tierGrid[rowOffset + x] > 0){
-        const start = x; let sum = 0, count = 0;
-        while (x < mapW && tierGrid[rowOffset + x] > 0){ sum += tierGrid[rowOffset + x]; count++; x++; }
-        runs.push({ x0: start, x1: x, sum, count });
-      } else x++;
-    }
-    if (!runs.length) return [];
-    const merged = [runs[0]];
-    for (let i = 1; i < runs.length; i++){
-      const prev = merged[merged.length - 1], cur = runs[i];
-      if (cur.x0 - prev.x1 <= gapTol){
-        prev.x1 = cur.x1; prev.sum += cur.sum; prev.count += cur.count;
-      } else merged.push(cur);
-    }
-    return merged
-      .filter(r => (r.x1 - r.x0) >= minWidth)
-      .map(r => ({ x0: r.x0, x1: r.x1, tier: clamp(Math.round(r.sum / r.count), 1, 4) }));
+  function fontString(level, size){
+    return `${TIER_PREFIX[level]}${size}px ${TIER_FAMILY[level]}`;
   }
 
-  function fontString(tier, size){
-    return `${TIER_PREFIX[tier]}${size}px ${TIER_FAMILY[tier]}`;
-  }
-
-  // Like getRowSegments, but for a *band* of rows rather than a single sampled line: a
-  // single-pixel sample is unreliable once a band spans many rows (it can land on
-  // background even when the band clearly has content elsewhere in its height). Instead,
-  // vote across the whole band per column, requiring a modest minimum presence so a
-  // stray pixel doesn't count, but real content anywhere in the band does.
-  function getBandSegments(y0, y1, gapTol, minWidth){
-    y0 = Math.floor(clamp(y0, 0, mapH - 1));
-    y1 = Math.ceil(clamp(y1, y0 + 1, mapH));
-    const bandH = y1 - y0;
-    const presence = Math.max(2, Math.round(bandH * 0.12));
-    const colTier = new Uint8Array(mapW);
-    const colCount = new Int32Array(mapW);
-    const colSum = new Int32Array(mapW);
-    for (let y = y0; y < y1; y++){
-      const rowOffset = y * mapW;
-      for (let x = 0; x < mapW; x++){
-        const t = tierGrid[rowOffset + x];
-        if (t > 0){ colCount[x]++; colSum[x] += t; }
-      }
-    }
-    for (let x = 0; x < mapW; x++){
-      colTier[x] = colCount[x] >= presence ? clamp(Math.round(colSum[x] / colCount[x]), 1, 4) : 0;
-    }
-    const runs = [];
-    let x = 0;
-    while (x < mapW){
-      if (colTier[x] > 0){
-        const start = x; let sum = 0, count = 0;
-        while (x < mapW && colTier[x] > 0){ sum += colTier[x]; count++; x++; }
-        runs.push({ x0: start, x1: x, sum, count });
-      } else x++;
-    }
-    if (!runs.length) return [];
-    const merged = [runs[0]];
-    for (let i = 1; i < runs.length; i++){
-      const prev = merged[merged.length - 1], cur = runs[i];
-      if (cur.x0 - prev.x1 <= gapTol){
-        prev.x1 = cur.x1; prev.sum += cur.sum; prev.count += cur.count;
-      } else merged.push(cur);
-    }
-    return merged
-      .filter(r => (r.x1 - r.x0) >= minWidth)
-      .map(r => ({ x0: r.x0, x1: r.x1, tier: clamp(Math.round(r.sum / r.count), 1, 4) }));
-  }
-
-  // Collect every content segment in the image at a given line height, in natural
-  // top-to-bottom, left-to-right reading order. `coarse` switches from single-row
-  // sampling to whole-band voting once rows are far taller than one line of text.
-  function collectSegments(lineHeight, baseSize, coarse){
-    const gapTol = Math.max(2, Math.round(lineHeight * 0.28));
-    const minWidth = Math.max(3, Math.round(lineHeight * 0.35));
-    const glyphRoom = baseSize * 1.4; // top-baselined glyphs need room below `y` for descenders
-    const all = [];
-    for (let y = 0; y + glyphRoom <= mapH; y += lineHeight){
-      const segs = coarse
-        ? getBandSegments(y, y + lineHeight, gapTol, minWidth)
-        : getRowSegments(Math.min(mapH - 1, y + Math.floor(lineHeight / 2)), gapTol, minWidth);
-      for (const seg of segs) all.push({ x0: seg.x0, x1: seg.x1, tier: seg.tier, y });
-    }
-    return all;
-  }
-
-  // Every word gets a size, baseline, and (for the script tier) tilt jitter of its own —
-  // deterministic from the word + its position, so re-renders are stable, not random —
-  // for a hand-set, collage feel rather than a mechanically uniform grid.
-  function packSegment(ctx, seg, words, qi, limit, draw, inkColor, cursor, baseSize){
-    const tier = seg.tier;
-    const tierFontSize = clamp(baseSize * TIER_SCALE[tier], TIER_MIN[tier], MAX_FONT_CAP);
-    ctx.font = fontString(tier, tierFontSize);
-    const spaceWidth = ctx.measureText(' ').width;
-
-    let x = cursor.x, first = cursor.first, placed = 0;
-    while (qi < words.length && placed < limit){
-      const word = words[qi];
-      const key = word + '|' + qi;
-      const sizeJitter = 0.82 + jitter01(key + 'size') * 0.4; // 0.82x - 1.22x
-      const wordSize = clamp(tierFontSize * sizeJitter, TIER_MIN[tier], MAX_FONT_CAP);
-      ctx.font = fontString(tier, wordSize);
-      const wWidth = ctx.measureText(word).width;
-      const addition = first ? wWidth : spaceWidth + wWidth;
-      if (!first && x + addition > seg.x1) break;
-      // A lone oversized first word is allowed to spill past the segment's natural
-      // bound (better than an empty line), but never past the canvas edge itself.
-      if (first && x + wWidth > mapW) x = Math.max(0, mapW - wWidth);
-      x += first ? 0 : spaceWidth;
-      if (draw){
-        const yJitter = (jitter01(key + 'y') - 0.5) * tierFontSize * 0.3;
-        const rot = tier === 1 ? (jitter01(key + 'rot') - 0.5) * 0.22 : 0; // script tier only, ~±6.3deg
-        ctx.fillStyle = inkColor;
-        if (rot){
-          ctx.save();
-          ctx.translate(x, seg.y + yJitter);
-          ctx.rotate(rot);
-          ctx.fillText(word, 0, 0);
-          ctx.restore();
-        } else {
-          ctx.fillText(word, x, seg.y + yJitter);
+  // ---------- marching squares: trace iso-tone contour lines through the field ----------
+  // Standard 16-case table, corners weighted NW=8 NE=4 SE=2 SW=1. Cases 5 and 10 are the
+  // ambiguous "saddle" configurations (opposite corners inside, adjacent corners outside);
+  // resolved by the average of the four corners, so equal cells always agree on which way
+  // the line bends and no gaps open up between them.
+  function marchingSquaresSegments(field, w, h, step, threshold){
+    const segs = [];
+    const val = (gx, gy) => field[gy * w + gx];
+    const lerp = (xa, ya, va, xb, yb, vb) => {
+      const t = (threshold - va) / (vb - va);
+      return { x: xa + (xb - xa) * t, y: ya + (yb - ya) * t };
+    };
+    for (let gy = 0; gy + step < h; gy += step){
+      for (let gx = 0; gx + step < w; gx += step){
+        const x0 = gx, y0 = gy, x1 = gx + step, y1 = gy + step;
+        const vNW = val(x0, y0), vNE = val(x1, y0), vSE = val(x1, y1), vSW = val(x0, y1);
+        const caseIdx = (vNW >= threshold ? 8 : 0) | (vNE >= threshold ? 4 : 0) | (vSE >= threshold ? 2 : 0) | (vSW >= threshold ? 1 : 0);
+        if (caseIdx === 0 || caseIdx === 15) continue;
+        const N = () => lerp(x0, y0, vNW, x1, y0, vNE);
+        const E = () => lerp(x1, y0, vNE, x1, y1, vSE);
+        const S = () => lerp(x0, y1, vSW, x1, y1, vSE);
+        const W = () => lerp(x0, y0, vNW, x0, y1, vSW);
+        const add = (p1, p2) => segs.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        switch (caseIdx){
+          case 1: add(W(), S()); break;
+          case 2: add(S(), E()); break;
+          case 3: add(W(), E()); break;
+          case 4: add(N(), E()); break;
+          case 5: {
+            const avg = (vNW + vNE + vSE + vSW) / 4;
+            if (avg >= threshold){ add(W(), N()); add(S(), E()); } else { add(W(), S()); add(N(), E()); }
+            break;
+          }
+          case 6: add(N(), S()); break;
+          case 7: add(W(), N()); break;
+          case 8: add(N(), W()); break;
+          case 9: add(N(), S()); break;
+          case 10: {
+            const avg = (vNW + vNE + vSE + vSW) / 4;
+            if (avg >= threshold){ add(N(), E()); add(W(), S()); } else { add(N(), W()); add(S(), E()); }
+            break;
+          }
+          case 11: add(N(), E()); break;
+          case 12: add(W(), E()); break;
+          case 13: add(S(), E()); break;
+          case 14: add(W(), S()); break;
         }
       }
-      x += wWidth;
-      first = false; qi++; placed++;
     }
-    cursor.x = x; cursor.first = first;
-    return qi;
+    return segs;
   }
 
-  const MIN_WORDS_PER_LINE = 1.15;
-
-  // How coarsely to sample the mask for anchor rows. A detailed real photo can offer far
-  // more individual text rows (hundreds, once hair and wrinkles are traced at normal type
-  // size) than a short quote has words for — picking a sparse subset of those fine rows
-  // still leaves them scattered across the whole frame with huge gaps, reading as noise
-  // rather than a face. Instead, the *scan* resolution (not the rendered type size) backs
-  // off for short quotes, so the number of anchor points this pass finds is naturally
-  // close to the word budget — every one of them gets used, spread wherever the mask
-  // actually has content.
-  function scanLineHeightFor(fineLineHeight, wordBudgetLines){
-    const targetBands = Math.max(1, wordBudgetLines);
-    return Math.max(fineLineHeight, mapH / (targetBands * 1.7));
+  // Chain marching squares' unordered segments into ordered polylines by matching shared
+  // endpoints. Segments from adjacent cells that trace the same cell edge compute
+  // bit-identical interpolated points (same corner values, same lerp), so a rounded-key
+  // match reliably finds the connection.
+  function linkContourSegments(segs){
+    const key = (x, y) => Math.round(x * 100) + ',' + Math.round(y * 100);
+    const pointMap = new Map();
+    const used = new Array(segs.length).fill(false);
+    const addPt = (k, entry) => {
+      let list = pointMap.get(k);
+      if (!list){ list = []; pointMap.set(k, list); }
+      list.push(entry);
+    };
+    segs.forEach((s, i) => {
+      addPt(key(s.x1, s.y1), { i, end: 'a' });
+      addPt(key(s.x2, s.y2), { i, end: 'b' });
+    });
+    const extend = (points, fromPoint, prepend) => {
+      let current = fromPoint;
+      while (true){
+        const candidates = pointMap.get(key(current.x, current.y));
+        if (!candidates) break;
+        let next = null;
+        for (const c of candidates){ if (!used[c.i]){ next = c; break; } }
+        if (!next) break;
+        used[next.i] = true;
+        const seg = segs[next.i];
+        const other = next.end === 'a' ? { x: seg.x2, y: seg.y2 } : { x: seg.x1, y: seg.y1 };
+        if (prepend) points.unshift(other); else points.push(other);
+        current = other;
+      }
+    };
+    const polylines = [];
+    for (let i = 0; i < segs.length; i++){
+      if (used[i]) continue;
+      used[i] = true;
+      const s = segs[i];
+      const points = [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }];
+      extend(points, points[points.length - 1], false);
+      extend(points, points[0], true);
+      polylines.push(points);
+    }
+    return polylines;
   }
 
-  // ---------- single-pass layout: place the whole quote once at `baseSize` ----------
-  function layoutQuote(ctx, words, baseSize, draw, inkColor){
-    const fineLineHeight = Math.max(4, Math.round(baseSize * LINE_SPACING));
-    const wordBudgetLines = Math.max(1, Math.floor(words.length / MIN_WORDS_PER_LINE));
-    const fineSegments = collectSegments(fineLineHeight, baseSize);
+  function polylineLength(points){
+    let len = 0;
+    for (let i = 0; i < points.length - 1; i++) len += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+    return len;
+  }
 
-    let segments, lineHeight, useIdx, perSegmentLimit;
-    if (wordBudgetLines >= fineSegments.length){
-      // Long quote: genuinely enough words to need full-width lines — use every row, in
-      // order, taking as many words as actually fit.
-      segments = fineSegments;
-      lineHeight = fineLineHeight;
-      useIdx = segments.map((_, i) => i);
-      perSegmentLimit = Infinity;
-    } else {
-      // Short quote: the coarse bands were sized so their count roughly matches the word
-      // budget, but a band can still split into several segments (e.g. both glasses
-      // lenses in one row), leaving more segments than words. Pick indices spread evenly
-      // across the *whole* list — not just the first few — so coverage still reaches from
-      // top to bottom, and cap each to a proportional share so no single wide segment
-      // swallows the rest of the phrase.
-      lineHeight = scanLineHeightFor(fineLineHeight, wordBudgetLines);
-      segments = collectSegments(lineHeight, baseSize, true);
-      const numToUse = Math.min(segments.length, Math.max(1, wordBudgetLines));
-      if (numToUse >= segments.length){
-        useIdx = segments.map((_, i) => i);
-      } else {
-        const chosen = new Set();
-        for (let k = 0; k < numToUse; k++){
-          const idx = numToUse === 1
-            ? Math.floor((segments.length - 1) / 2)
-            : Math.round(k * (segments.length - 1) / (numToUse - 1));
-          chosen.add(idx);
-        }
-        useIdx = Array.from(chosen).sort((a, b) => a - b);
+  // Text-on-path only reads correctly while the path keeps facing the same general
+  // direction; once it doubles back on itself — the tip of a chin, a sharp collar point —
+  // glyphs would need to flip mid-stroke to stay upright, which reads as garbled,
+  // mirrored text. Splitting each contour wherever its horizontal direction reverses
+  // guarantees every resulting run faces one way throughout. Any run left facing
+  // right-to-left is then reversed outright (walked from its other end) rather than
+  // rotated upside-down in place — upside-down-but-consistent still reads backwards to a
+  // human eye scanning left to right, while a reversed walk direction reads correctly.
+  function splitMonotonicRuns(points){
+    if (points.length < 2) return [];
+    const runs = [];
+    let current = [points[0]];
+    let sign = null;
+    for (let i = 0; i < points.length - 1; i++){
+      const dx = points[i + 1].x - points[i].x;
+      const s = dx >= 0 ? 1 : -1;
+      if (sign !== null && s !== sign){
+        runs.push(current);
+        current = [points[i]];
       }
-      perSegmentLimit = Math.max(1, Math.ceil(words.length / useIdx.length));
+      sign = s;
+      current.push(points[i + 1]);
     }
+    runs.push(current);
+    return runs.map(run => (run[run.length - 1].x < run[0].x) ? run.slice().reverse() : run);
+  }
 
-    const cursors = segments.map(seg => ({ x: seg.x0, first: true }));
-    let qi = 0, lastTouched = -1;
-
-    for (const i of useIdx){
-      if (qi >= words.length) break;
-      const before_qi = qi;
-      qi = packSegment(ctx, segments[i], words, qi, perSegmentLimit, draw, inkColor, cursors[i], baseSize);
-      if (qi > before_qi) lastTouched = i;
-    }
-
-    // Capacity is an estimate, so a little slack can remain. Only ever continue *forward*
-    // from the last segment touched — never revisit an earlier one, or later words would
-    // land ahead of earlier ones.
-    if (qi < words.length){
-      for (let i = Math.max(0, lastTouched); i < segments.length && qi < words.length; i++){
-        qi = packSegment(ctx, segments[i], words, qi, Infinity, draw, inkColor, cursors[i], baseSize);
+  // Every contour at one tone threshold, tagged with the typographic `level` it
+  // represents (1 = the outermost silhouette boundary, up to 4 = the deepest shadow's
+  // inner edge), split into direction-consistent (and now always left-to-right-facing)
+  // runs, with anything too small to read as a deliberate stroke dropped.
+  function extractContours(field, w, h, step, threshold, level, minLength){
+    const segs = marchingSquaresSegments(field, w, h, step, threshold);
+    const out = [];
+    for (const points of linkContourSegments(segs)){
+      for (const run of splitMonotonicRuns(points)){
+        const length = polylineLength(run);
+        if (length >= minLength) out.push({ points: run, length, level });
       }
     }
+    return out;
+  }
 
-    // Last resort: the chosen segments were an estimate and, in rare cases (an oddly
-    // shaped mask, a narrow last segment), still can't hold everything even though room
-    // remains elsewhere on the page. Rather than strand those words, wrap them as a plain
-    // line wherever the canvas still has vertical space — but never past its edge, or
-    // "complete" would stop meaning what solveFontSize needs it to mean.
-    if (qi < words.length){
-      ctx.font = fontString(3, baseSize);
-      const spaceWidth = ctx.measureText(' ').width;
-      const glyphRoom = baseSize * 1.4; // top-baselined glyphs need room below `y` for descenders
-      let y = segments.length ? segments[segments.length - 1].y + lineHeight : 0;
-      let x = 0, first = true;
-      while (qi < words.length && y + glyphRoom <= mapH){
-        const word = words[qi];
-        const wWidth = ctx.measureText(word).width;
-        const addition = first ? wWidth : spaceWidth + wWidth;
-        if (!first && x + addition > mapW){ y += lineHeight; x = 0; first = true; if (y + glyphRoom > mapH) break; }
-        x += first ? 0 : spaceWidth;
-        if (draw){ ctx.fillStyle = inkColor; ctx.fillText(word, x, y); }
-        x += wWidth; first = false; qi++;
-      }
+  function pointAndAngleAtArc(points, cumLens, totalLen, arc){
+    const n = points.length;
+    if (arc <= 0){
+      return { x: points[0].x, y: points[0].y, angle: Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x) };
     }
-
+    if (arc >= totalLen){
+      return { x: points[n - 1].x, y: points[n - 1].y, angle: Math.atan2(points[n - 1].y - points[n - 2].y, points[n - 1].x - points[n - 2].x) };
+    }
+    let i = 0;
+    while (i < cumLens.length - 2 && cumLens[i + 1] < arc) i++;
+    const segStart = cumLens[i], segEnd = cumLens[i + 1];
+    const t = segEnd > segStart ? (arc - segStart) / (segEnd - segStart) : 0;
+    const p0 = points[i], p1 = points[i + 1];
     return {
-      complete: qi >= words.length, placed: qi, total: words.length,
-      lineHeight, segments: segments.length, dense: perSegmentLimit === Infinity,
+      x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t,
+      angle: Math.atan2(p1.y - p0.y, p1.x - p0.x),
     };
   }
 
-  // Matching the mask's detail to the word count (see blurRadiusFor, below) does the heavy
-  // lifting for density; sizing just needs to stay at a comfortable, legible size and only
-  // shrink below it when a long quote genuinely needs the extra room.
-  function solveFontSize(ctx, words){
-    const niceFont = clamp(Math.round(mapW / 80), 12, 20);
-    const minFont = clamp(Math.round(mapW / 170), 7, 11);
-    const fitsAt = (size) => layoutQuote(ctx, words, size, false, null).complete;
+  // ---------- calligram: flow the quote's characters along the contours, once ----------
+  const CONTOUR_STEP = 3;   // marching-squares grid spacing, in output px
 
-    if (fitsAt(niceFont)) return { size: niceFont, fits: true };
-    if (!fitsAt(minFont)) return { size: minFont, fits: false };
-
-    let lo = minFont, hi = niceFont, best = lo;
-    for (let i = 0; i < 20; i++){
-      const mid = (lo + hi) / 2;
-      if (fitsAt(mid)){ best = mid; lo = mid; } else hi = mid;
-    }
-    return { size: best, fits: true };
+  function buildContourField(){
+    return blurField(darkness, mapW, mapH, Math.max(1, Math.round(mapW / 300)));
   }
 
-  // How much to blur the tonal map before thresholding it into bands. A photo can carry
-  // far more fine detail (individual hair strands, wrinkles) than a short quote has words
-  // to trace; blurring first merges that detail into a smaller number of coherent regions
-  // (hair mass, glasses, jaw shadow, collar) roughly matched to how much text is available,
-  // so the type can stay a legible size instead of being blown up to compensate.
-  function blurRadiusFor(wordCount){
-    const wordBudgetLines = Math.max(1, wordCount / MIN_WORDS_PER_LINE);
-    return clamp((mapW * 0.22) / wordBudgetLines, 0, mapW * 0.045);
+  // Threshold levels are the four tonal bands' boundaries (the Otsu split, and three
+  // even divisions of the darker range above it) — the same boundaries the earlier
+  // tiered-fill version classified regions with, but now traced as lines instead of
+  // filled. Priority order is outer silhouette first (most recognizable on its own),
+  // then progressively finer interior detail, longest strokes first within a level.
+  // The minimum stroke length scales with resolution: too low and a real photo's texture
+  // noise (skin grain, stray dark pixels) qualifies as "strokes", scattering illegible
+  // two-letter fragments everywhere instead of a few readable, recognizable ones.
+  function allLevelContours(field){
+    const bias = parseFloat(els.thresholdBiasInput.value);
+    const t0 = clamp(computeOtsuThreshold(field, mapW, mapH) + bias, 0, 248);
+    const span = (255 - t0) / 4;
+    const levels = [t0, t0 + span, t0 + span * 2, t0 + span * 3];
+    const minLength = clamp(mapW * 0.08, 60, 160);
+    const out = [];
+    levels.forEach((thr, idx) => {
+      out.push(...extractContours(field, mapW, mapH, CONTOUR_STEP, thr, idx + 1, minLength));
+    });
+    out.sort((a, b) => (a.level - b.level) || (b.length - a.length));
+    return out;
+  }
+
+  // A calligram artist doesn't stop tracing once a short phrase runs out of letters —
+  // they keep going, repeating it, until the shape is fully drawn. So the quote repeats
+  // indefinitely (separated by ✦, same convention as the CLI tool) to supply every
+  // contour, rather than racing a fixed pool of characters against however many strokes
+  // happen to be long. Every contour gets filled to its own physical capacity; none are
+  // starved because an earlier, longer stroke used up a finite budget.
+  const CYCLE_SEPARATOR = '   ✦   ';
+  function streamChar(unit, i){ return unit[i % unit.length]; }
+
+  // Walk the quote's characters (repeating via the cyclic stream) along every given
+  // contour in order, rotating each glyph to the path's local tangent.
+  // `maxCharsPerContour` keeps one very long stroke (a full collar line, a whole
+  // hairline) from turning into a monotonous wall of repeated text — it still traces
+  // the stroke, just capped to a phrase-and-a-bit.
+  function walkContours(ctx, contours, quote, baseSize, inkColor, maxCharsPerContour){
+    const unit = quote + CYCLE_SEPARATOR;
+    let ci = 0, contoursUsed = 0;
+    for (const contour of contours){
+      const { points, length, level } = contour;
+      if (points.length < 2 || length <= 0) continue;
+      const cumLens = [0];
+      for (let i = 0; i < points.length - 1; i++) cumLens.push(cumLens[i] + Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y));
+      const fontSize = clamp(baseSize * TIER_SCALE[level], TIER_MIN[level], MAX_FONT_CAP);
+      ctx.font = fontString(level, fontSize);
+      const spaceWidth = fontSize * 0.32;
+      let arc = 0;
+      const ciStart = ci;
+      let charsHere = 0;
+      while (charsHere < maxCharsPerContour){
+        const ch = streamChar(unit, ci);
+        const chWidth = ch === ' ' ? spaceWidth : ctx.measureText(ch).width;
+        if (arc + chWidth > length) break;
+        if (ch !== ' '){
+          const { x, y, angle } = pointAndAngleAtArc(points, cumLens, length, arc + chWidth / 2);
+          // Every run was normalized to face left-to-right in splitMonotonicRuns, so
+          // the local tangent angle is already the correct upright orientation — no
+          // per-character flip decision needed here.
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(angle);
+          ctx.fillStyle = inkColor;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(ch, 0, 0);
+          ctx.restore();
+        }
+        arc += chWidth;
+        ci++;
+        charsHere++;
+      }
+      if (ci > ciStart) contoursUsed++;
+    }
+    return { charsPlaced: ci, contoursUsed };
+  }
+
+  const MAX_CHARS_PER_CONTOUR = 80;
+
+  // Rather than solving "does the whole quote fit" (moot now that it repeats forever),
+  // pick the largest type size at which most available contours are still long enough to
+  // hold at least one character — too large a size and only the handful of longest
+  // strokes (an outer jaw line, a shoulder) can carry any text, leaving the interior
+  // detail (eyes, brow, glasses rim) bare; too small and the type stops reading as
+  // letters. `targetCoverage` is the fraction of contours that must qualify.
+  function measureAvgCharWidth(ctx, level, size){
+    const fontSize = clamp(size * TIER_SCALE[level], TIER_MIN[level], MAX_FONT_CAP);
+    ctx.font = fontString(level, fontSize);
+    return ctx.measureText('mnaoicre').width / 8;
+  }
+
+  function coverageAt(ctx, contours, size){
+    const widths = [null, measureAvgCharWidth(ctx, 1, size), measureAvgCharWidth(ctx, 2, size), measureAvgCharWidth(ctx, 3, size), measureAvgCharWidth(ctx, 4, size)];
+    let count = 0;
+    for (const c of contours) if (c.length >= widths[c.level]) count++;
+    return contours.length ? count / contours.length : 0;
+  }
+
+  function solveCalligram(ctx, contours){
+    const minFont = clamp(Math.round(mapW / 260), 6, 9);
+    const maxFont = clamp(Math.round(mapW / 60), 14, 34);
+    const targetCoverage = 0.8;
+
+    if (coverageAt(ctx, contours, maxFont) >= targetCoverage) return maxFont;
+    if (coverageAt(ctx, contours, minFont) < targetCoverage) return minFont;
+
+    let lo = minFont, hi = maxFont, best = minFont;
+    for (let i = 0; i < 16; i++){
+      const mid = (lo + hi) / 2;
+      if (coverageAt(ctx, contours, mid) >= targetCoverage){ best = mid; lo = mid; } else hi = mid;
+    }
+    return best;
+  }
+
+  // Last resort: the size solve is an estimate, and per-character widths mean a contour
+  // rarely divides evenly. Rather than strand leftover characters, wrap them as a plain
+  // line below whatever the contours used — completion matters more than every last
+  // character being part of a curve.
+  function drawPlainRemainder(ctx, text, startIdx, baseSize, inkColor, startY){
+    ctx.font = fontString(3, baseSize);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const words = text.slice(startIdx).split(' ').filter(Boolean);
+    const lineHeight = baseSize * 1.3;
+    const spaceWidth = ctx.measureText(' ').width;
+    let x = 0, y = startY, first = true;
+    for (const word of words){
+      const wWidth = ctx.measureText(word).width;
+      const addition = first ? wWidth : spaceWidth + wWidth;
+      if (!first && x + addition > mapW){
+        y += lineHeight; x = 0; first = true;
+        if (y + baseSize * 1.4 > mapH) break;
+      }
+      x += first ? 0 : spaceWidth;
+      ctx.fillStyle = inkColor;
+      ctx.fillText(word, x, y);
+      x += wWidth; first = false;
+    }
   }
 
   function renderPortrait(){
@@ -880,25 +902,31 @@
     const inkColor = invert ? '#f4efe4' : '#18140f';
     ctx.fillStyle = paperColor;
     ctx.fillRect(0, 0, mapW, mapH);
-    ctx.textBaseline = 'top';
 
     const quote = (els.quoteInput.value || DEFAULT_QUOTE).trim().replace(/\s+/g, ' ');
-    const words = quote.split(' ').filter(Boolean);
-    if (!words.length) words.push('…');
+    const text = quote.length ? quote : '…';
 
-    buildTierGrid(blurRadiusFor(words.length));
-    const { size, fits } = solveFontSize(ctx, words);
-    const result = layoutQuote(ctx, words, size, true, inkColor);
+    const field = buildContourField();
+    const contours = allLevelContours(field);
+    const fontSize = solveCalligram(ctx, contours);
+    const { charsPlaced, contoursUsed } = walkContours(ctx, contours, text, fontSize, inkColor, MAX_CHARS_PER_CONTOUR);
 
-    els.meta.textContent = `${mapW} × ${mapH}px · ${Math.round(size)}px type · ${result.placed}/${result.total} words`;
-    if (!fits){
-      setStatus('Quote is long for this shape — shrunk type as far as legible.', 'warn');
-    } else if (result.placed < result.total){
-      setStatus('Fit closely; a sliver of the quote had nowhere to land.', 'warn');
-    } else if (!result.dense){
-      setStatus('Short quote — spread across the portrait’s boldest shapes.', 'warn');
-    } else {
+    // The stream repeats forever, so "complete" here means the contours collectively held
+    // at least one full clean pass of the quote — anything less and the photo's shape
+    // genuinely can't carry the whole phrase, so the rest wraps as a plain line instead
+    // of getting cut off.
+    const complete = charsPlaced >= text.length;
+    if (!complete){
+      drawPlainRemainder(ctx, text, charsPlaced, fontSize, inkColor, mapH * 0.82);
+    }
+
+    els.meta.textContent = `${mapW} × ${mapH}px · ${Math.round(fontSize)}px type · ${contoursUsed} of ${contours.length} strokes`;
+    if (!complete){
+      setStatus('Fit closely — a little of the quote spilled onto a plain line.', 'warn');
+    } else if (contoursUsed < contours.length){
       setStatus('Ready');
+    } else {
+      setStatus('Ready — used every contour the photo offered.');
     }
   }
 

@@ -17,57 +17,52 @@ xdg-open web/index.html      # Linux
 
 Upload a photo, paste a quote, and it renders live.
 
-The quote is set **once, in full** — never repeated. The photo is reduced to
-four tonal bands via Otsu thresholding, and each band gets its own
+It's a genuine **calligram**: the letters themselves bend to trace the
+actual contour lines of the photo — the hairline, a jaw's edge, a glasses
+rim, a collar — rather than being poured into a grid of straight rows. The
+photo is traced with marching squares at four tonal thresholds (an Otsu
+split, plus three finer bands into the shadows), producing a set of contour
+strokes tagged by how dark the tone they trace is. Each tone gets its own
 typographic voice, not just a bigger or bolder version of the same one:
 
-| Band | Typeface | Feel |
+| Tone | Typeface | Feel |
 |---|---|---|
 | Faintest highlights | NothingYouCouldDo (script) | a whispered, handwritten touch |
 | Soft shading | Instrument Serif Italic | small, delicate |
 | Mid-tones | Lora | the readable backbone |
 | Deepest shadow (hair, brows, eyes, jaw) | Big Shoulders (bold display) | large, dramatic |
 
-Within a band, every individual word also gets its own small, deterministic
-jitter in size and baseline (and a slight tilt for the script band) — so it
-reads as hand-set and collaged rather than a mechanically uniform grid,
-while staying legible. A solver picks the largest comfortable base size at
-which the *entire* quote still fits somewhere on the portrait's shape —
-shrinking only as far as genuinely necessary.
-
-A real photo can carry far more fine detail (individual hair strands,
-wrinkles) than a short quote has words to trace. Rather than either scatter
-a handful of words across hundreds of rows (reads as noise) or blow the type
-up to poster size to compensate, the app blurs the tonal map by an amount
-tied to the word count before thresholding it — merging fine detail into a
-smaller number of coherent regions (a hair mass, glasses, a jaw shadow, a
-collar) roughly sized to what the quote can actually cover, then samples
-those regions with whole-band voting rather than a single fragile point
-sample. A quote is never truncated: if a photo's shape genuinely can't hold
-it at a legible size, the remainder wraps as a plain line rather than being
-cut off. Very short quotes (a handful of words) inherently can't convey a
-detailed likeness — there just isn't enough text — and the status line says
-so rather than pretending otherwise.
+The quote is walked character-by-character along every contour stroke, each
+glyph rotated to the path's local tangent so it leans into the curve it's
+tracing. A short quote can't fill hundreds of strokes on its own, so — like
+a real word-artist repeating a phrase to fill a shape — it cycles
+indefinitely (separated by ✦) until every contour the photo offers has been
+traced. A solver picks the type size that keeps most of those contours long
+enough to carry legible letters: too large and only the longest strokes
+(an outline, a shoulder) can hold any text, leaving the interior detail
+(eyes, brow, glasses) bare; too small and it stops reading as letters at
+all. The image is recognizable purely from the *arrangement* of the
+strokes — the quote is never truncated to make that work; if a photo's
+strokes genuinely can't carry even one full pass of it, the remainder wraps
+as a plain line rather than being cut off.
 
 Controls: output width, contrast, tonal curve, edge emphasis, shading
 balance (nudges the tone/background cutoff), and light-text-on-dark-ground
 invert — plus a "Download PNG" button.
 
-A longer quote gives the solver more to work with and traces the shape more
-fully:
+A longer quote reads clearly in full on its first pass around the shape:
 
 ![web app example, long quote](examples/web_example_long.png)
 
-A short quote still spreads across the portrait's most defining regions,
-just more sparsely:
+A short quote just cycles more times to trace the same contours:
 
 ![web app example, short quote](examples/web_example.png)
 
 ## Command line
 
 A separate, simpler command-line tool (`quoteimage/portrait.py`) is also
-included — it tiles the quote repeatedly across the image, shaded by
-brightness, rather than the browser app's single-pass/weighted-type
+included — it tiles the quote repeatedly across a row/column grid, shaded
+by brightness, rather than the browser app's contour-tracing calligram
 approach above.
 
 ![CLI example](examples/cli_example.png)
