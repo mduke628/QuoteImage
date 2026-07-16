@@ -391,7 +391,7 @@
   const TIER_PREFIX = [null, "", "italic ", "", ""];
   const TIER_FAMILY = [null, "'NothingYouCouldDo', cursive", "'InstrumentSerif', serif", "'Lora', serif", "'BigShoulders', sans-serif"];
   const TIER_SCALE = [null, 0.68, 0.85, 1.0, 1.35];
-  const TIER_MIN   = [null, 14, 11, 8, 12];
+  const TIER_MIN   = [null, 17, 14, 13, 15];
   const MAX_FONT_CAP = 220;
 
   const els = {
@@ -751,7 +751,34 @@
   const CONTOUR_STEP = 3;   // marching-squares grid spacing, in output px
 
   function buildContourField(){
-    return blurField(darkness, mapW, mapH, Math.max(1, Math.round(mapW / 300)));
+    return blurField(darkness, mapW, mapH, Math.max(1, Math.round(mapW / 160)));
+  }
+
+  // A sharp edge in the photo (not a soft gradient) gets crossed by two or three adjacent
+  // tone thresholds within just a few pixels of each other, so multiple levels each trace
+  // their own near-identical copy of that one real edge — e.g. a hard head/background
+  // boundary comes back as two or three nearly-concentric duplicate strokes. Lettering
+  // every copy piles overlapping text on top of itself right where the image most needs a
+  // single clean line. A candidate is a duplicate if its start, middle, and end all fall
+  // within `dist` of some already-accepted stroke; since accepted strokes are considered
+  // level-ascending, length-descending, the first (most prominent) copy of a stroke always
+  // wins and later near-copies are dropped outright rather than lettered.
+  function nearestPointDist(px, py, points){
+    let min = Infinity;
+    for (const p of points){
+      const d = Math.hypot(p.x - px, p.y - py);
+      if (d < min) min = d;
+    }
+    return min;
+  }
+
+  function isDuplicateContour(candidate, accepted, dist){
+    const pts = candidate.points;
+    const samples = [pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]];
+    for (const acc of accepted){
+      if (samples.every(s => nearestPointDist(s.x, s.y, acc.points) <= dist)) return true;
+    }
+    return false;
   }
 
   // Threshold levels are the four tonal bands' boundaries (the Otsu split, and three
@@ -767,13 +794,19 @@
     const t0 = clamp(computeOtsuThreshold(field, mapW, mapH) + bias, 0, 248);
     const span = (255 - t0) / 4;
     const levels = [t0, t0 + span, t0 + span * 2, t0 + span * 3];
-    const minLength = clamp(mapW * 0.08, 60, 160);
+    const minLength = clamp(mapW * 0.16, 130, 280);
     const out = [];
     levels.forEach((thr, idx) => {
       out.push(...extractContours(field, mapW, mapH, CONTOUR_STEP, thr, idx + 1, minLength));
     });
     out.sort((a, b) => (a.level - b.level) || (b.length - a.length));
-    return out;
+
+    const dupDist = clamp(mapW * 0.02, 12, 30);
+    const deduped = [];
+    for (const c of out){
+      if (!isDuplicateContour(c, deduped, dupDist)) deduped.push(c);
+    }
+    return deduped;
   }
 
   // A calligram artist doesn't stop tracing once a short phrase runs out of letters —
@@ -834,11 +867,15 @@
   const MAX_CHARS_PER_CONTOUR = 80;
 
   // Rather than solving "does the whole quote fit" (moot now that it repeats forever),
-  // pick the largest type size at which most available contours are still long enough to
-  // hold at least one character — too large a size and only the handful of longest
-  // strokes (an outer jaw line, a shoulder) can carry any text, leaving the interior
-  // detail (eyes, brow, glasses rim) bare; too small and the type stops reading as
-  // letters. `targetCoverage` is the fraction of contours that must qualify.
+  // pick the largest type size at which a healthy share of the available contours are
+  // still long enough to hold at least one character. This is a legibility knob more than
+  // a coverage one: a real word-artist doesn't letter every stray texture line, just the
+  // strokes substantial enough to carry a readable word or two. `targetCoverage` is
+  // deliberately modest — biasing toward a size you can actually read the quote at, over
+  // cramming type into every last short, cluttered contour (tiny detail lines are simply
+  // left untouched by `walkContours` when they're too short to hold even one glyph at
+  // this size, which is what keeps dense areas like eyes/glasses from turning into an
+  // illegible tangle of overlapping fragments).
   function measureAvgCharWidth(ctx, level, size){
     const fontSize = clamp(size * TIER_SCALE[level], TIER_MIN[level], MAX_FONT_CAP);
     ctx.font = fontString(level, fontSize);
@@ -853,9 +890,9 @@
   }
 
   function solveCalligram(ctx, contours){
-    const minFont = clamp(Math.round(mapW / 260), 6, 9);
-    const maxFont = clamp(Math.round(mapW / 60), 14, 34);
-    const targetCoverage = 0.8;
+    const minFont = clamp(Math.round(mapW / 170), 9, 14);
+    const maxFont = clamp(Math.round(mapW / 42), 20, 46);
+    const targetCoverage = 0.4;
 
     if (coverageAt(ctx, contours, maxFont) >= targetCoverage) return maxFont;
     if (coverageAt(ctx, contours, minFont) < targetCoverage) return minFont;
